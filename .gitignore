@@ -1,3 +1,15 @@
+/*.d
+/*.o
+/.version
+/hwstamp_ctl
+/nsm
+/phc2sys
+/pmc
+/ptp4l
+/phc_ctl
+/snmp4lptp
+/timemaster
+/ts2phc
 # Prerequisites
 *.d
 
