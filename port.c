@@ -2083,6 +2083,19 @@ out:
 	return err;
 }
 
+void print_clock_identity(struct ClockIdentity *ci)
+{
+  unsigned char *p = (unsigned char *)ci;
+  int i;
+  char ci_str[20];
+
+  for (i = 0; i < sizeof(struct ClockIdentity); i++) {
+    sprintf(ci_str + i * 2, "%02x ", p[i]);
+  }
+  ci_str[sizeof(struct ClockIdentity) * 2 + 1] = 0;
+  pr_debug("ClockIdentity: %s", ci_str);
+}
+
 void process_delay_resp(struct port *p, struct ptp_message *m)
 {
 	struct delay_resp_msg *rsp = &m->delay_resp;
@@ -2092,6 +2105,12 @@ void process_delay_resp(struct port *p, struct ptp_message *m)
 	if (p->state != PS_UNCALIBRATED && p->state != PS_SLAVE) {
 		return;
 	}
+
+    pr_debug("requestingPortIdentity");
+    print_clock_identity(&rsp->requestingPortIdentity.clockIdentity);
+    pr_debug("portIdentity");
+    print_clock_identity(&p->portIdentity.clockIdentity);
+
 	if (!pid_eq(&rsp->requestingPortIdentity, &p->portIdentity)) {
 		return;
 	}

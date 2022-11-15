@@ -18,7 +18,7 @@
  */
 #include "fault.h"
 
-static const char *fault_type_str[FT_CNT] = {
+static const char * const fault_type_str[FT_CNT] = {
 	"FT_UNSPECIFIED",
 	"FT_BAD_PEER_NETWORK",
 	"FT_SWITCH_PHC",

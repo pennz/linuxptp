@@ -38,8 +38,8 @@
 #define BUF_SIZE 4096
 #define GENLMSG_DATA(glh) ((void *)(NLMSG_DATA(glh) + GENL_HDRLEN))
 
-static int rtnl_len;
-static char *rtnl_buf;
+static _Thread_local int rtnl_len;
+static _Thread_local char *rtnl_buf;
 static int get_team_active_iface(int master_index);
 
 static int nl_close(int fd)

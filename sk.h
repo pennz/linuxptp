@@ -134,18 +134,18 @@ int sk_timestamping_init(int fd, const char *device, enum timestamp_type type,
  * Limits the time that RECVMSG(2) will poll while waiting for the tx timestamp
  * if MSG_ERRQUEUE is set. Specified in milliseconds.
  */
-extern int sk_tx_timeout;
+extern _Thread_local int sk_tx_timeout;
 
 /**
  * Enables the SO_TIMESTAMPNS socket option on the both the event and
  * general sockets in order to test the order of paired sync and
  * follow up messages using their network stack receipt time stamps.
  */
-extern int sk_check_fupsync;
+extern _Thread_local int sk_check_fupsync;
 
 /**
  * Hardware time-stamp setting mode
  */
-extern enum hwts_filter_mode sk_hwts_filter_mode;
+extern _Thread_local enum hwts_filter_mode sk_hwts_filter_mode;
 
 #endif

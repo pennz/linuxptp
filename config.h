@@ -45,6 +45,9 @@ struct config {
 
 	/* unicast master tables */
 	STAILQ_HEAD(ucmtab_head, unicast_master_table) unicast_master_tables;
+
+    /* default config tab */
+    struct config_item *config_tab;
 };
 
 int config_read(const char *name, struct config *cfg);

@@ -47,7 +47,7 @@ void print_set_verbose(int value);
  *                    client->message_types);
  */
 
-extern int print_level;
+extern _Thread_local int print_level;
 
 static inline int print_get_level(void)
 {

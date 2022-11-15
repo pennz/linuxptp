@@ -25,9 +25,14 @@
 /*
  * This macro borrowed from the Linux kernel.
  */
-#define container_of(ptr, type, member) ({			\
+/* #define container_of(ptr, type, member) ({			\
 	const typeof( ((type *)0)->member ) *__mptr = (ptr);	\
 	(type *)( (char *)__mptr - offsetof(type, member) );	\
 })
+*/
+
+/* https://stackoverflow.com/questions/10269685/kernels-container-of-any-way-to-make-it-iso-conforming */
+#define container_of(ptr, type, member) \
+                      ((type *) ((char *)(ptr) - offsetof(type, member)))
 
 #endif

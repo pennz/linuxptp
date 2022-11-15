@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <threads.h>
 
 #include "contain.h"
 #include "msg.h"
@@ -40,9 +41,22 @@ struct message_storage {
 	struct ptp_message msg __attribute__((aligned (8)));
 };
 
-static TAILQ_HEAD(msg_pool, ptp_message) msg_pool = TAILQ_HEAD_INITIALIZER(msg_pool);
+static _Thread_local TAILQ_HEAD(msg_pool, ptp_message) msg_pool; // put init to thread thing
 
-static struct {
+/* TODO: need to initialize once */
+void t_msg_pool_init() {
+    msg_pool.tqh_first = (void *)0;
+    msg_pool.tqh_last = &(msg_pool).tqh_first;
+}
+
+/* = TAILQ_HEAD_INITIALIZER(msg_pool);
+static struct msg_pool
+        { struct ptp_message *tqh_first;
+          struct ptp_message **tqh_last; }
+            msg_pool =
+                    { ((void *)0), &(msg_pool).tqh_first };*/
+
+static _Thread_local struct {
 	int total;
 	int count;
 } pool_stats;

@@ -219,3 +219,69 @@ Hardware Receive Filter Modes: none
   For testing I use an OTMC 100 grandmaster clock donated by OMICRON Lab.
 
   - http://www.omicron-lab.com/ptp
+
+* Code reading
+
+BC and OC, use the same events and dispatch. and in bc_event, we have
+```c
+	case FD_DELAY_TIMER:
+		pr_debug("%s: delay timeout", p->log_name);
+		port_set_delay_tmo(p);
+		delay_req_prune(p);
+		p->service_stats.delay_timeout++;
+		if (port_delay_request(p)) {
+			return EV_FAULT_DETECTED;
+		}
+```
+** State Transfer
+In fsm.h, we have port_state, and fsm_event
+In fsm.c, we have ptp_fsm and ptp_slave_fsm, they are the stat machine for port
+
+*** dispatch
+bc_event (CLOCK_TYPE_BOUNDARY) -> process_follow_up -> port_syfunfsm -> different port functions (message_interval_request, port_synchronize, port_change_phc)->port_dispatch call p->dispatch, call e2e_dispatch
+
+bc_dispatch will call port_e2e_transition too
+
+*** enum fsm_event port_event(struct port *p, int fd_index)
+任何 timer 或者 RTNL(netlink) 触发，进行对应处理, 同时会接受ptp报文，进行对应处理
+```c
+	case FD_DELAY_TIMER:
+		pr_debug("%s: delay timeout", p->log_name);
+		port_set_delay_tmo(p);
+		delay_req_prune(p);
+		tc_prune(p);
+		if (!clock_free_running(p->clock)) {
+			switch (p->state) {
+			case PS_UNCALIBRATED:
+			case PS_SLAVE:
+				if (port_delay_request(p)) {
+					event = EV_FAULT_DETECTED;
+				}
+				break;
+			default:
+				break;
+			};
+		}
+		return event;
+...    
+
+	switch (msg_type(msg)) {
+	case SYNC:
+...
+	case DELAY_RESP:
+		if (tc_fwd_response(p, msg)) {
+			event = EV_FAULT_DETECTED;
+		}
+		if (dup) {
+			process_delay_resp(p, dup);
+		}
+		break;
+```
+clock_poll (check all different timer, and new ptp frames) -> *port_event*
+
+generate_clock_identity -> is this standard?
+
+
+port_initialize will create all the  fd (and all the file will be opened?).
+
+port_open will create device poll event, for ptp packets

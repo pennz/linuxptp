@@ -17,9 +17,10 @@
 
 KBUILD_OUTPUT =
 
-DEBUG	=
+DEBUG	= -DDEBUG -g
 CC	= $(CROSS_COMPILE)gcc
 VER     = -DVER=$(version)
+EXTRA_CFLAGS = -std=c11
 CFLAGS	= -Wall $(VER) $(incdefs) $(DEBUG) $(EXTRA_CFLAGS)
 LDLIBS	= -lm -lrt -pthread $(EXTRA_LDFLAGS)
 PRG	= ptp4l hwstamp_ctl nsm phc2sys phc_ctl pmc timemaster ts2phc

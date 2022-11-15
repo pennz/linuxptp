@@ -24,11 +24,11 @@
 
 #include "print.h"
 
-static int verbose = 0;
-int print_level = LOG_INFO;
-static int use_syslog = 1;
-static const char *progname;
-static const char *message_tag;
+static _Thread_local int verbose = 0;
+_Thread_local int print_level = LOG_INFO;
+static _Thread_local int use_syslog = 1;
+static _Thread_local const char *progname;
+static _Thread_local const char *message_tag;
 
 void print_set_progname(const char *name)
 {

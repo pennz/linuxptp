@@ -148,7 +148,7 @@ no_socket:
 
 enum { MC_PRIMARY, MC_PDELAY };
 
-static struct in_addr mcast_addr[2];
+static _Thread_local struct in_addr mcast_addr[2];
 
 static int udp_open(struct transport *t, struct interface *iface,
 		    struct fdarray *fda, enum timestamp_type ts_type)

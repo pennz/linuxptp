@@ -39,9 +39,9 @@
 
 /* globals */
 
-int sk_tx_timeout = 1;
-int sk_check_fupsync;
-enum hwts_filter_mode sk_hwts_filter_mode = HWTS_FILTER_NORMAL;
+_Thread_local int sk_tx_timeout = 1;
+_Thread_local int sk_check_fupsync;
+_Thread_local enum hwts_filter_mode sk_hwts_filter_mode = HWTS_FILTER_NORMAL;
 
 /* private methods */
 

@@ -139,7 +139,7 @@ struct config_item {
 #define PORT_ITEM_STR(label, _default) \
 	CONFIG_ITEM_STRING(label, 1, _default)
 
-static struct config_enum clock_servo_enu[] = {
+static const struct config_enum clock_servo_enu[] = {
 	{ "pi",     CLOCK_SERVO_PI     },
 	{ "linreg", CLOCK_SERVO_LINREG },
 	{ "ntpshm", CLOCK_SERVO_NTPSHM },
@@ -147,7 +147,7 @@ static struct config_enum clock_servo_enu[] = {
 	{ NULL, 0 },
 };
 
-static struct config_enum clock_type_enu[] = {
+static const struct config_enum clock_type_enu[] = {
 	{ "OC",      CLOCK_TYPE_ORDINARY },
 	{ "BC",      CLOCK_TYPE_BOUNDARY },
 	{ "P2P_TC",  CLOCK_TYPE_P2P      },
@@ -155,19 +155,19 @@ static struct config_enum clock_type_enu[] = {
 	{ NULL, 0 },
 };
 
-static struct config_enum dataset_comp_enu[] = {
+static const struct config_enum dataset_comp_enu[] = {
 	{ "ieee1588", DS_CMP_IEEE1588 },
 	{ "G.8275.x", DS_CMP_G8275    },
 	{ NULL, 0 },
 };
 
-static struct config_enum delay_filter_enu[] = {
+static const struct config_enum delay_filter_enu[] = {
 	{ "moving_average", FILTER_MOVING_AVERAGE },
 	{ "moving_median",  FILTER_MOVING_MEDIAN  },
 	{ NULL, 0 },
 };
 
-static struct config_enum delay_mech_enu[] = {
+static const struct config_enum delay_mech_enu[] = {
 	{ "Auto", DM_AUTO },
 	{ "E2E",  DM_E2E },
 	{ "P2P",  DM_P2P },
@@ -175,28 +175,28 @@ static struct config_enum delay_mech_enu[] = {
 	{ NULL, 0 },
 };
 
-static struct config_enum extts_polarity_enu[] = {
+static const struct config_enum extts_polarity_enu[] = {
 	{ "rising",  PTP_RISING_EDGE  },
 	{ "falling", PTP_FALLING_EDGE },
 	{ "both",    PTP_RISING_EDGE | PTP_FALLING_EDGE },
 	{ NULL, 0 },
 };
 
-static struct config_enum hwts_filter_enu[] = {
+static const struct config_enum hwts_filter_enu[] = {
 	{ "normal",  HWTS_FILTER_NORMAL  },
 	{ "check",   HWTS_FILTER_CHECK   },
 	{ "full",    HWTS_FILTER_FULL    },
 	{ NULL, 0 },
 };
 
-static struct config_enum nw_trans_enu[] = {
+static const struct config_enum nw_trans_enu[] = {
 	{ "L2",    TRANS_IEEE_802_3 },
 	{ "UDPv4", TRANS_UDP_IPV4   },
 	{ "UDPv6", TRANS_UDP_IPV6   },
 	{ NULL, 0 },
 };
 
-static struct config_enum timestamping_enu[] = {
+static const struct config_enum timestamping_enu[] = {
 	{ "hardware", TS_HARDWARE  },
 	{ "software", TS_SOFTWARE  },
 	{ "legacy",   TS_LEGACY_HW },
@@ -205,7 +205,7 @@ static struct config_enum timestamping_enu[] = {
 	{ NULL, 0 },
 };
 
-static struct config_enum tsproc_enu[] = {
+static const struct config_enum tsproc_enu[] = {
 	{ "filter",        TSPROC_FILTER        },
 	{ "raw",           TSPROC_RAW           },
 	{ "filter_weight", TSPROC_FILTER_WEIGHT },
@@ -213,19 +213,19 @@ static struct config_enum tsproc_enu[] = {
 	{ NULL, 0 },
 };
 
-static struct config_enum as_capable_enu[] = {
+static const struct config_enum as_capable_enu[] = {
 	{ "true", AS_CAPABLE_TRUE },
 	{ "auto", AS_CAPABLE_AUTO },
 	{ NULL, 0 },
 };
 
-static struct config_enum bmca_enu[] = {
+static const struct config_enum bmca_enu[] = {
 	{ "ptp",  BMCA_PTP  },
 	{ "noop", BMCA_NOOP },
 	{ NULL, 0 },
 };
 
-struct config_item config_tab[] = {
+static struct config_item const config_tab[] = {
 	PORT_ITEM_INT("announceReceiptTimeout", 3, 2, UINT8_MAX),
 	PORT_ITEM_ENU("asCapable", AS_CAPABLE_AUTO, as_capable_enu),
 	GLOB_ITEM_INT("assume_two_step", 0, 0, 1),
@@ -894,7 +894,12 @@ struct config *config_create(void)
 	struct config *cfg;
 	int i;
 
+    struct config_item *t_config_tab;
+    t_config_tab = calloc(N_CONFIG_ITEMS, sizeof(config_tab[0]));
+    memcpy(t_config_tab, config_tab, sizeof(config_tab));
+
 	cfg = calloc(1, sizeof(*cfg));
+    cfg->config_tab = t_config_tab;
 	if (!cfg) {
 		return NULL;
 	}
@@ -916,10 +921,11 @@ struct config *config_create(void)
 
 	/* Populate the hash table with global defaults. */
 	for (i = 0; i < N_CONFIG_ITEMS; i++) {
-		ci = &config_tab[i];
+		ci = &t_config_tab[i];
 		ci->flags |= CFG_ITEM_STATIC;
 		snprintf(buf, sizeof(buf), "global.%s", ci->label);
 		if (hash_insert(cfg->htab, buf, ci)) {
+			fprintf(stderr, "duplicate item -----%s\n", buf);
 			fprintf(stderr, "duplicate item %s\n", ci->label);
 			goto fail;
 		}
@@ -927,17 +933,18 @@ struct config *config_create(void)
 
 	/* Perform a Built In Self Test.*/
 	for (i = 0; i < N_CONFIG_ITEMS; i++) {
-		ci = &config_tab[i];
+		ci = &t_config_tab[i];
 		ci = config_global_item(cfg, ci->label);
-		if (ci != &config_tab[i]) {
+		if (ci != &t_config_tab[i]) {
 			fprintf(stderr, "config BIST failed at %s\n",
-				config_tab[i].label);
+				t_config_tab[i].label);
 			goto fail;
 		}
 	}
 	return cfg;
 fail:
 	hash_destroy(cfg->htab, NULL);
+    free(t_config_tab);
 	free(cfg->opts);
 	free(cfg);
 	return NULL;
@@ -965,6 +972,7 @@ void config_destroy(struct config *cfg)
 		free(table);
 	}
 	hash_destroy(cfg->htab, config_item_free);
+    free(cfg->config_tab);
 	free(cfg->opts);
 	free(cfg);
 }

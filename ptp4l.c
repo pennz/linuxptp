@@ -256,5 +256,6 @@ out:
 	if (clock)
 		clock_destroy(clock);
 	config_destroy(cfg);
+
 	return err;
 }
