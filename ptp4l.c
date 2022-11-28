@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <threads.h>
 
 #include "clock.h"
 #include "config.h"
@@ -35,6 +36,10 @@
 #include "uds.h"
 #include "util.h"
 #include "version.h"
+
+/* fix for getopt not thread-safe */
+#define OPTPARSE_IMPLEMENTATION
+#include "optparse.h"
 
 static void usage(char *progname)
 {
@@ -68,33 +73,53 @@ static void usage(char *progname)
 		progname);
 }
 
-int main(int argc, char *argv[])
+struct test_thread_info {
+    int argc;
+    const char** argv;
+};
+
+void * inner_main(void * ti )
 {
 	char *config = NULL, *req_phc = NULL, *progname;
 	enum clock_type type = CLOCK_TYPE_ORDINARY;
-	int c, err = -1, index, print_level;
+	int option, err = -1, index, print_level;
 	struct clock *clock = NULL;
 	struct option *opts;
 	struct config *cfg;
 
-	if (handle_term_signals())
-		return -1;
+    int argc;
+    char **argv;
+
+    struct test_thread_info* _ti = (struct test_thread_info*)ti;
+    argc = _ti->argc;
+    argv = _ti->argv;
+
+    fprintf(stderr ,"thread test started with ID - %lu, argc = %d, argv[0] = %s, %s\n",thrd_current(), argc,argv[0], argv[1]);
+
+    t_msg_pool_init();
+    t_tc_pool_init();
+    t_tlv_pool_init();
 
 	cfg = config_create();
 	if (!cfg) {
-		return -1;
+		return (void*)-1;
 	}
 	opts = config_long_options(cfg);
 
 	/* Process the command line arguments. */
 	progname = strrchr(argv[0], '/');
 	progname = progname ? 1+progname : argv[0];
-	while (EOF != (c = getopt_long(argc, argv, "AEP246HSLf:i:p:sl:mqvh",
-				       opts, &index))) {
-		switch (c) {
+
+    struct optparse options;
+
+    optparse_init(&options, argv);
+
+	while ((option = optparse(&options, "AEP246HSLf:i:p:sl:mqvh"))  != -1) {
+		switch (option) {
 		case 0:
-			if (config_parse_option(cfg, opts[index].name, optarg))
-				goto out;
+			//if (config_parse_option(cfg, opts[index].name, optarg))
+			//	goto out;
+            fprintf(stderr, "Please do not use long opt.\n");
 			break;
 		case 'A':
 			if (config_set_int(cfg, "delay_mechanism", DM_AUTO))
@@ -136,14 +161,14 @@ int main(int argc, char *argv[])
 				goto out;
 			break;
 		case 'f':
-			config = optarg;
+			config = options.optarg;
 			break;
 		case 'i':
-			if (!config_create_interface(optarg, cfg))
+			if (!config_create_interface(options.optarg, cfg))
 				goto out;
 			break;
 		case 'p':
-			req_phc = optarg;
+			req_phc = options.optarg;
 			break;
 		case 's':
 			if (config_set_int(cfg, "clientOnly", 1)) {
@@ -151,7 +176,7 @@ int main(int argc, char *argv[])
 			}
 			break;
 		case 'l':
-			if (get_arg_val_i(c, optarg, &print_level,
+			if (get_arg_val_i(option, options.optarg, &print_level,
 					  PRINT_LEVEL_MIN, PRINT_LEVEL_MAX))
 				goto out;
 			config_set_int(cfg, "logging_level", print_level);
@@ -177,8 +202,8 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (config && (c = config_read(config, cfg))) {
-		return c;
+	if (config && (option = config_read(config, cfg))) {
+		return (void *)option;
 	}
 
 	print_set_progname(progname);
@@ -257,5 +282,49 @@ out:
 		clock_destroy(clock);
 	config_destroy(cfg);
 
-	return err;
+	return (void *)err;
+}
+
+
+int main(int argc, char *argv[]) {
+    thrd_t test_thread, test_thread2;
+    int rc = 0;
+    struct test_thread_info ti;
+    struct test_thread_info ti2;
+
+    ti.argc = argc;
+    ti.argv = argv;
+
+    ti2.argc = ti.argc;
+    char** new_argv = malloc((argc+1) * sizeof *new_argv);
+    for(int i = 0; i < argc; ++i)
+    {
+        size_t length = strlen(argv[i]); // excluding the null byte at end
+        new_argv[i] = strndup(argv[i], length); //malloc(length);
+        //memcpy(new_argv[i], argv[i], length);
+    }
+    new_argv[argc] = NULL;
+
+    ti2.argv = new_argv;
+
+	if (handle_term_signals())
+		return -1;
+
+    rc = thrd_create(&test_thread, (thrd_start_t) inner_main, (void *)&ti);
+    if (rc == thrd_error) {
+        printf("ERORR; thrd_create() call failed\n");
+        exit(EXIT_FAILURE);
+    }
+
+    rc = thrd_create(&test_thread2, (thrd_start_t) inner_main, (void *)&ti2);
+    if (rc == thrd_error) {
+        printf("ERORR; thrd_create() call failed\n");
+        exit(EXIT_FAILURE);
+    }
+
+    int retval2, retval;
+    thrd_join(test_thread,  &retval);
+    thrd_join(test_thread2, &retval2);
+
+    return retval | retval2;
 }

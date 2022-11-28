@@ -28,9 +28,9 @@
 
 #define NS_PER_SEC 1000000000LL
 
-static int realtime_leap_bit;
-static long realtime_hz;
-static long realtime_nominal_tick;
+static _Thread_local int realtime_leap_bit;
+static _Thread_local long realtime_hz;
+static _Thread_local long realtime_nominal_tick;
 
 void clockadj_init(clockid_t clkid)
 {

@@ -29,7 +29,7 @@
 #include "print.h"
 #include "tlv.h"
 
-int assume_two_step = 0;
+_Thread_local int assume_two_step = 0;
 
 /*
  * Head room fits a VLAN Ethernet header, and 'msg' is 64 bit aligned.

@@ -376,6 +376,7 @@ void msg_cleanup(void);
  */
 struct ptp_message *msg_duplicate(struct ptp_message *msg, int cnt);
 
+void t_msg_pool_init();
 /**
  * Obtain a reference to a message, increasing its reference count by one.
  * @param m A message obtained using @ref msg_allocate().
@@ -447,7 +448,7 @@ static inline Boolean msg_unicast(struct ptp_message *m)
 /**
  * Work around buggy 802.1AS switches.
  */
-extern int assume_two_step;
+extern _Thread_local int assume_two_step;
 
 /**
  * Test whether a message is one-step message.

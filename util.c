@@ -35,7 +35,7 @@
 #define NS_PER_HOUR (3600 * NS_PER_SEC)
 #define NS_PER_DAY (24 * NS_PER_HOUR)
 
-static int running = 1;
+static _Thread_local int running = 1;
 
 const char *ps_str[] = {
 	"NONE",

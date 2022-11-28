@@ -139,7 +139,7 @@ struct clock {
 	int step_window;
 };
 
-struct clock the_clock;
+_Thread_local struct clock the_clock;
 
 static void handle_state_decision_event(struct clock *c);
 static int clock_resize_pollfd(struct clock *c, int new_nports);

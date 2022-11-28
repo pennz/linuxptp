@@ -36,8 +36,13 @@
 
 uint8_t ieee8021_id[3] = { IEEE_802_1_COMMITTEE };
 
-static TAILQ_HEAD(tlv_pool, tlv_extra) tlv_pool =
-	TAILQ_HEAD_INITIALIZER(tlv_pool);
+static _Thread_local TAILQ_HEAD(tlv_pool, tlv_extra) tlv_pool;
+// = TAILQ_HEAD_INITIALIZER(tlv_pool);
+
+void t_tlv_pool_init() {
+    tlv_pool.tqh_first = (void *)0;
+    tlv_pool.tqh_last = &(tlv_pool).tqh_first;
+}
 
 static void scaled_ns_n2h(ScaledNs *sns)
 {

@@ -100,4 +100,5 @@ int tc_ignore(struct port *q, struct ptp_message *m);
  */
 void tc_prune(struct port *q);
 
+void t_tc_pool_init();
 #endif

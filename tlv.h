@@ -427,4 +427,5 @@ int tlv_post_recv(struct tlv_extra *extra);
  */
 void tlv_pre_send(struct TLV *tlv, struct tlv_extra *extra);
 
+void t_tlv_pool_init();
 #endif

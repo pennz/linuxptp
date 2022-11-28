@@ -349,7 +349,7 @@ static struct config_item const config_tab[] = {
 	GLOB_ITEM_INT("write_phase_mode", 0, 0, 1),
 };
 
-static struct unicast_master_table *current_uc_mtab;
+static _Thread_local struct unicast_master_table *current_uc_mtab;
 
 static enum parser_result
 parse_fault_interval(struct config *cfg, const char *section,

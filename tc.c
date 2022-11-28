@@ -30,13 +30,18 @@ enum tc_match {
 	TC_DELAY_REQRESP,
 };
 
-static TAILQ_HEAD(tc_pool, tc_txd) tc_pool = TAILQ_HEAD_INITIALIZER(tc_pool);
+static _Thread_local TAILQ_HEAD(tc_pool, tc_txd) tc_pool; // = TAILQ_HEAD_INITIALIZER(tc_pool);
 
 static int tc_match_delay(int ingress_port, struct ptp_message *resp,
 			  struct tc_txd *txd);
 static int tc_match_syfup(int ingress_port, struct ptp_message *msg,
 			  struct tc_txd *txd);
 static void tc_recycle(struct tc_txd *txd);
+
+void t_tc_pool_init() {
+    tc_pool.tqh_first = (void *)0;
+    tc_pool.tqh_last = &(tc_pool).tqh_first;
+}
 
 static struct tc_txd *tc_allocate(void)
 {

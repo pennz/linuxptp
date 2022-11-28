@@ -70,7 +70,7 @@ struct raw {
 #define PRP_MIN_PACKET_LEN 70
 #define PRP_TRAILER_LEN 6
 
-static struct sock_filter raw_filter[N_RAW_FILTER] = {
+static _Thread_local struct sock_filter raw_filter[N_RAW_FILTER] = {
 	{OP_LDH,  0, 0, OFF_ETYPE   },
 	{OP_JEQ,  0, 4, ETH_P_8021Q          }, /*f goto non-vlan block*/
 	{OP_LDH,  0, 0, OFF_ETYPE + 4        },
