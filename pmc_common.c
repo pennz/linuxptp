@@ -682,7 +682,7 @@ struct ptp_message *pmc_recv(struct pmc *pmc)
 		pr_err("recv message failed");
 		goto failed;
 	}
-	err = msg_post_recv(msg, cnt);
+	err = msg_post_recv(msg, cnt, -1);
 	if (err) {
 		switch (err) {
 		case -EBADMSG:

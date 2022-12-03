@@ -43,7 +43,7 @@ static int monitor_forward(struct port *port, struct ptp_message *msg)
 		pr_debug("failed to send signaling message to slave event monitor: %s",
 			 strerror(-err));
 	}
-	if (msg_post_recv(msg, pdulen)) {
+	if (msg_post_recv(msg, pdulen, port_clock_domain_number(port))) {
 		return -1;
 	}
 	msg->header.sequenceId++;

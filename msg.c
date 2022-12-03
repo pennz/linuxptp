@@ -308,7 +308,34 @@ void msg_cleanup(void)
 	}
 }
 
-struct ptp_message *msg_duplicate(struct ptp_message *msg, int cnt)
+struct ptp_message *msg_duplicate_off_pool(struct ptp_message *msg, struct ptp_message *target, int cnt, int *target_cnt)
+{
+	memcpy(target, msg, sizeof(*target));
+    *target_cnt = cnt;
+
+    return target;
+}
+
+struct ptp_message *msg_cp_data_and_ts(struct ptp_message *src, struct ptp_message *target, int cnt)
+{
+    // backup other data
+	TAILQ_ENTRY(ptp_message) list;
+
+    memcpy(&list, &(src->list), sizeof(list));
+	int tail_room = target->tail_room;
+	int refcnt =  target->refcnt;
+
+
+	memcpy(target, src, sizeof(*target));
+
+	target->tail_room = tail_room;
+	target->refcnt = refcnt;
+	memcpy(&(target->list), &list, sizeof(list));
+
+    return target;
+}
+
+struct ptp_message *msg_duplicate(struct ptp_message *msg, int cnt, UInteger8 domainNumber)
 {
 	struct ptp_message *dup;
 	int err;
@@ -321,7 +348,7 @@ struct ptp_message *msg_duplicate(struct ptp_message *msg, int cnt)
 	dup->refcnt = 1;
 	TAILQ_INIT(&dup->tlv_list);
 
-	err = msg_post_recv(dup, cnt);
+	err = msg_post_recv(dup, cnt, domainNumber);
 	if (err) {
 		switch (err) {
 		case -EBADMSG:
@@ -349,18 +376,60 @@ void msg_get(struct ptp_message *m)
 	m->refcnt++;
 }
 
-int msg_post_recv(struct ptp_message *m, int cnt)
+int msg_post_recv(struct ptp_message *m, int cnt, UInteger8 domainNumber)
 {
 	int err, pdulen, suffix_len, type;
+        int another_domain_flag = 0;
 
+    //ref: https://elixir.bootlin.com/linux/latest/source/include/uapi/asm-generic/errno.h#L57
 	if (cnt < sizeof(struct ptp_header))
 		return -EBADMSG;
 
 	err = hdr_post_recv(&m->header);
 	if (err)
 		return err;
+    if (domainNumber != -1 && msg_domainNumber(m) != domainNumber)
+        another_domain_flag = 1;
 
 	type = msg_type(m);
+
+    if (another_domain_flag) {
+        switch (type) {
+        case SYNC:
+            pdulen = sizeof(struct sync_msg);
+            return -ENOMSG; // will copy
+        case DELAY_REQ:
+            pdulen = sizeof(struct delay_req_msg);
+            break;
+        case PDELAY_REQ:
+            pdulen = sizeof(struct pdelay_req_msg);
+            break;
+        case PDELAY_RESP:
+            pdulen = sizeof(struct pdelay_resp_msg);
+            return -ENOMSG; // will copy
+        case FOLLOW_UP:
+            pdulen = sizeof(struct follow_up_msg);
+            return -ENOMSG; // will copy
+        case DELAY_RESP:
+            pdulen = sizeof(struct delay_resp_msg);
+            return -ENOMSG; // will copy
+        case PDELAY_RESP_FOLLOW_UP:
+            pdulen = sizeof(struct pdelay_resp_fup_msg);
+            return -ENOMSG; // will copy
+        case ANNOUNCE:
+            pdulen = sizeof(struct announce_msg);
+            break;
+        case SIGNALING:
+            pdulen = sizeof(struct signaling_msg);
+            break;
+        case MANAGEMENT:
+            pdulen = sizeof(struct management_msg);
+            break;
+        default:
+            return -EBADMSG;
+        }
+        return -EPROTO; // ignore
+    }
 
 	switch (type) {
 	case SYNC:
@@ -559,8 +628,8 @@ void msg_print(struct ptp_message *m, FILE *fp)
 		"\t"
 		"%-10s "
 //		"versionPTP         0x%02X "
-//		"messageLength      %hu "
-//		"domainNumber       %u "
+		"messageLength      %hu "
+		"domainNumber       %u "
 //		"reserved1          0x%02X "
 //		"flagField          0x%02X%02X "
 //		"correction         %lld "
@@ -572,8 +641,8 @@ void msg_print(struct ptp_message *m, FILE *fp)
 		,
 		msg_type_string(msg_type(m)),
 //		m->header.ver,
-//		m->header.messageLength,
-//		m->header.domainNumber,
+		m->header.messageLength,
+		m->header.domainNumber,
 //		m->header.reserved1,
 //		m->header.flagField[0],
 //		m->header.flagField[1],

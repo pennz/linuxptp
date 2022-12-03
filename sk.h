@@ -20,6 +20,7 @@
 #ifndef HAVE_SK_H
 #define HAVE_SK_H
 
+#include <pthread.h>
 #include "address.h"
 #include "transport.h"
 
@@ -147,5 +148,4 @@ extern _Thread_local int sk_check_fupsync;
  * Hardware time-stamp setting mode
  */
 extern _Thread_local enum hwts_filter_mode sk_hwts_filter_mode;
-
 #endif

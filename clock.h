@@ -19,7 +19,7 @@
  */
 #ifndef HAVE_CLOCK_H
 #define HAVE_CLOCK_H
-
+#include <sys/eventfd.h>
 #include "dm.h"
 #include "ds.h"
 #include "config.h"
@@ -42,6 +42,13 @@ enum clock_type {
 	CLOCK_TYPE_E2E        = 0x1000,
 	CLOCK_TYPE_MANAGEMENT = 0x0800,
 };
+
+bool is_clock_virtual();
+void set_clock_virtual();
+void clear_clock_virtual();
+int get_virtual_event_fd();
+int get_event_fd();
+void set_event_fd();
 
 /**
  * Obtains a reference to the best foreign master of a clock.

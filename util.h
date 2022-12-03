@@ -33,6 +33,11 @@
 #define MAX_PRINT_BYTES 16
 #define BIN_BUF_SIZE (MAX_PRINT_BYTES * 3 + 1)
 
+#define VIRT_DOMAIN_NUMBER 0
+#define MAIN_DOMAIN_NUMBER 1
+
+#define handle_error(msg) \
+   do { perror(msg); exit(EXIT_FAILURE); } while (0)
 /**
  * Table of human readable strings, one for each port state.
  */

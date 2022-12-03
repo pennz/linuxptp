@@ -254,6 +254,7 @@ static struct config_item const config_tab[] = {
 	GLOB_ITEM_DBL("first_step_threshold", 0.00002, 0.0, DBL_MAX),
 	PORT_ITEM_INT("follow_up_info", 0, 0, 1),
 	GLOB_ITEM_INT("free_running", 0, 0, 1),
+	GLOB_ITEM_INT("virtual", 0, 0, 1),
 	PORT_ITEM_INT("freq_est_interval", 1, 0, INT_MAX),
 	GLOB_ITEM_INT("G.8275.defaultDS.localPriority", 128, 1, UINT8_MAX),
 	PORT_ITEM_INT("G.8275.portDS.localPriority", 128, 1, UINT8_MAX),

@@ -357,4 +357,6 @@ enum bmca_select port_bmca(struct port *p);
  */
 void tc_cleanup(void);
 
+int port_clock_domain_number(struct port *port);
+
 #endif

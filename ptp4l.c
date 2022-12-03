@@ -78,7 +78,7 @@ struct test_thread_info {
     const char** argv;
 };
 
-void * inner_main(void * ti )
+void * inner_main(void * ti)
 {
 	char *config = NULL, *req_phc = NULL, *progname;
 	enum clock_type type = CLOCK_TYPE_ORDINARY;
@@ -94,7 +94,7 @@ void * inner_main(void * ti )
     argc = _ti->argc;
     argv = _ti->argv;
 
-    fprintf(stderr ,"thread test started with ID - %lu, argc = %d, argv[0] = %s, %s\n",thrd_current(), argc,argv[0], argv[1]);
+    //fprintf(stderr ,"thread test started with ID - %lu, argc = %d, argv[0] = %s, %s\n",thrd_current(), argc,argv[0], argv[1]);
 
     t_msg_pool_init();
     t_tc_pool_init();
@@ -114,12 +114,16 @@ void * inner_main(void * ti )
 
     optparse_init(&options, argv);
 
-	while ((option = optparse(&options, "AEP246HSLf:i:p:sl:mqvh"))  != -1) {
+	while ((option = optparse(&options, "VAEP246HSLf:i:p:sl:mqvh"))  != -1) {
 		switch (option) {
 		case 0:
 			//if (config_parse_option(cfg, opts[index].name, optarg))
 			//	goto out;
             fprintf(stderr, "Please do not use long opt.\n");
+			break;
+		case 'V':
+			if (config_set_int(cfg, "virtual", 1))
+				goto out;
 			break;
 		case 'A':
 			if (config_set_int(cfg, "delay_mechanism", DM_AUTO))
@@ -201,6 +205,9 @@ void * inner_main(void * ti )
 			goto out;
 		}
 	}
+    if (config_get_int(cfg, NULL, "virtual")) {
+		config_set_int(cfg, "domainNumber",config_get_int (cfg, NULL, "domainNumber")+1);
+    }
 
 	if (config && (option = config_read(config, cfg))) {
 		return (void *)option;
@@ -295,15 +302,16 @@ int main(int argc, char *argv[]) {
     ti.argc = argc;
     ti.argv = argv;
 
-    ti2.argc = ti.argc;
-    char** new_argv = malloc((argc+1) * sizeof *new_argv);
+    ti2.argc = argc+1; // add for virtual flag
+    char** new_argv = malloc((argc+2) * sizeof *new_argv);
     for(int i = 0; i < argc; ++i)
     {
         size_t length = strlen(argv[i]); // excluding the null byte at end
         new_argv[i] = strndup(argv[i], length); //malloc(length);
         //memcpy(new_argv[i], argv[i], length);
     }
-    new_argv[argc] = NULL;
+    new_argv[argc+1] = NULL;
+    new_argv[argc] = "-V";
 
     ti2.argv = new_argv;
 

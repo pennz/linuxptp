@@ -24,6 +24,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/queue.h>
+#include <sys/eventfd.h>
 
 #include "address.h"
 #include "bmc.h"
@@ -140,6 +141,38 @@ struct clock {
 };
 
 _Thread_local struct clock the_clock;
+
+/** Differentiate different type of port thread */
+_Thread_local int virtual_flag; // virtual_flag 0 means is the virtual
+
+int fd_virtual_event_share = -1;
+int fd_event_share = -1; // used for sendout data
+
+static pthread_mutex_t fd_virtual_event_share_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+inline bool is_clock_virtual() {
+    return virtual_flag != 0;
+}
+
+inline void set_clock_virtual() {
+    virtual_flag = 1;
+}
+
+inline void clear_clock_virtual() {
+    virtual_flag = 0;
+}
+
+inline int get_virtual_event_fd() {
+    return fd_virtual_event_share;
+}
+
+inline int get_event_fd() {
+    return fd_event_share;
+}
+
+inline void set_event_fd(int fd) {
+    fd_event_share = fd;
+}
 
 static void handle_state_decision_event(struct clock *c);
 static int clock_resize_pollfd(struct clock *c, int new_nports);
@@ -906,6 +939,14 @@ struct clock *clock_create(enum clock_type type, struct config *config,
 	struct interface *iface;
 	struct timespec ts;
 	int sfl;
+    int efd;
+
+    if (config_get_int(config, NULL, "virtual")){
+        set_clock_virtual();
+        print_set_progname("virtu");
+    } else {
+        clear_clock_virtual();
+    }
 
 	clock_gettime(CLOCK_REALTIME, &ts);
 	srandom(ts.tv_sec ^ ts.tv_nsec);
@@ -1212,6 +1253,16 @@ struct clock *clock_create(enum clock_type type, struct config *config,
 	LIST_INIT(&c->ports);
 	c->last_port_number = 0;
 
+    pthread_mutex_lock (&fd_virtual_event_share_mutex);
+    if (fd_virtual_event_share == -1) {
+        efd = eventfd(0, EFD_SEMAPHORE);
+        if (efd == -1) {
+           handle_error("eventfd create failed for virtual event distribution");
+        }
+        fd_virtual_event_share = efd;
+    }
+    pthread_mutex_unlock (&fd_virtual_event_share_mutex); // two thread will use this
+
 	if (clock_resize_pollfd(c, 0)) {
 		pr_err("failed to allocate pollfd");
 		return NULL;
@@ -1326,7 +1377,7 @@ static int clock_resize_pollfd(struct clock *c, int new_nports)
 
 	/* Need to allocate two whole extra blocks of fds for UDS ports. */
 	new_pollfd = realloc(c->pollfd,
-			     (new_nports + 2) * N_CLOCK_PFD *
+			     ((new_nports + 2) * N_CLOCK_PFD + 1) *
 			     sizeof(struct pollfd));
 	if (!new_pollfd) {
 		return -1;
@@ -1335,7 +1386,7 @@ static int clock_resize_pollfd(struct clock *c, int new_nports)
 	return 0;
 }
 
-static void clock_fill_pollfd(struct pollfd *dest, struct port *p)
+static void clock_fill_pollfd(struct pollfd *dest, struct port *p, bool with_virtual)
 {
 	struct fdarray *fda;
 	int i;
@@ -1347,6 +1398,21 @@ static void clock_fill_pollfd(struct pollfd *dest, struct port *p)
 	}
 	dest[i].fd = port_fault_fd(p);
 	dest[i].events = POLLIN|POLLPRI;
+
+    // we patch our shared event here // use the same memory
+    if (with_virtual) {
+
+        dest[i+1].fd = fd_virtual_event_share;
+
+        if (is_clock_virtual()) {
+	        dest[i+1].events = POLLIN|POLLPRI;
+
+            dest[FD_EVENT].events = POLLERR;
+            dest[FD_GENERAL].events = POLLERR;
+        } else {
+	        dest[i+1].events = POLLERR;
+        }
+    }
 }
 
 static void clock_check_pollfd(struct clock *c)
@@ -1358,12 +1424,12 @@ static void clock_check_pollfd(struct clock *c)
 		return;
 	}
 	LIST_FOREACH(p, &c->ports, list) {
-		clock_fill_pollfd(dest, p);
-		dest += N_CLOCK_PFD;
+		clock_fill_pollfd(dest, p, true);
+		dest += N_CLOCK_PFD+1;
 	}
-	clock_fill_pollfd(dest, c->uds_rw_port);
+	clock_fill_pollfd(dest, c->uds_rw_port, false);
 	dest += N_CLOCK_PFD;
-	clock_fill_pollfd(dest, c->uds_ro_port);
+	clock_fill_pollfd(dest, c->uds_ro_port, false);
 	c->pollfd_valid = 1;
 }
 
@@ -1415,7 +1481,7 @@ static void clock_forward_mgmt_msg(struct clock *c, struct port *p, struct ptp_m
 		if (clock_do_forward_mgmt(c, p, c->uds_rw_port, msg, &msg_ready))
 			pr_err("uds port: management forward failed");
 		if (msg_ready) {
-			msg_post_recv(msg, pdulen);
+			msg_post_recv(msg, pdulen, clock_domain_number(c));
 			msg->management.boundaryHops++;
 		}
 	}
@@ -1600,7 +1666,9 @@ int clock_poll(struct clock *c)
 	struct port *p;
 
 	clock_check_pollfd(c);
-	cnt = poll(c->pollfd, (c->nports + 2) * N_CLOCK_PFD, -1);
+
+	cnt = poll(c->pollfd, (c->nports + 2) * N_CLOCK_PFD+1, -1);
+
 	if (cnt < 0) {
 		if (EINTR == errno) {
 			return 0;
@@ -1616,7 +1684,7 @@ int clock_poll(struct clock *c)
 
 	LIST_FOREACH(p, &c->ports, list) {
 		/* Let the ports handle their events. */
-		for (i = 0; i < N_POLLFD; i++) {
+		for (i = 0; i < (N_POLLFD+1); i++) {
 			if (cur[i].revents & (POLLIN|POLLPRI|POLLERR)) {
 				if (cur[i].revents & POLLERR) {
 					pr_err("%s: unexpected socket error",
@@ -1651,7 +1719,7 @@ int clock_poll(struct clock *c)
 			}
 		}
 
-		cur += N_CLOCK_PFD;
+		cur += N_CLOCK_PFD+1;
 	}
 
 	/* Check the UDS ports. */

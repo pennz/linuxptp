@@ -137,16 +137,17 @@ enum fsm_event p2p_event(struct port *p, int fd_index)
 		}
 	}
 
+    // if is not timer event, then is should be gPTP data events
 	msg = msg_allocate();
 	if (!msg) {
 		return EV_FAULT_DETECTED;
 	}
 	msg->hwts.type = p->timestamping;
 
-	cnt = transport_recv(p->trp, fd, msg);
+	cnt = transport_recv(p->trp, fd, msg); // run in main thread
 	if (cnt <= 0) {
 		pr_err("%s: recv message failed", p->log_name);
-		msg_put(msg);
+		msg_put(msg); // like put back, not use it
 		return EV_FAULT_DETECTED;
 	}
 	if (msg_sots_valid(msg)) {
@@ -158,7 +159,7 @@ enum fsm_event p2p_event(struct port *p, int fd_index)
 		return EV_NONE;
 	}
 
-	dup = msg_duplicate(msg, cnt);
+	dup = msg_duplicate(msg, cnt, clock_domain_number(p->clock));
 	if (!dup) {
 		msg_put(msg);
 		return EV_NONE;
@@ -168,6 +169,7 @@ enum fsm_event p2p_event(struct port *p, int fd_index)
 		dup = NULL;
 	}
 
+    // here we put the message to different client thread, the main thread will do event ptp frames handling, as the message broker
 	switch (msg_type(msg)) {
 	case SYNC:
 		if (tc_fwd_sync(p, msg)) {

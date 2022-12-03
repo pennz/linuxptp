@@ -45,6 +45,17 @@
 #include "unicast_service.h"
 #include "util.h"
 
+/**
+ * Temporary transfer station for message
+ */
+static struct ptp_message msg_trans_station;
+static int msg_trans_station_recv_cnt;
+
+static struct ptp_message msg_trans_station_1;
+static int msg_trans_station_recv_cnt_1;
+
+static pthread_mutex_t fd_event_create_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 #define ALLOWED_LOST_RESPONSES 3
 #define ANNOUNCE_SPAN 1
 
@@ -730,6 +741,9 @@ int port_clr_tmo(int fd)
 	return timerfd_settime(fd, 0, &tmo, NULL);
 }
 
+int port_clock_domain_number(struct port *p) {
+    return clock_domain_number(p->clock);
+}
 static int port_ignore(struct port *p, struct ptp_message *m)
 {
 	struct ClockIdentity c1, c2;
@@ -1818,6 +1832,9 @@ int port_initialize(struct port *p)
 	struct config *cfg = clock_config(p->clock);
 	int fd[N_TIMER_FDS], i;
 
+    uint64_t u;
+    ssize_t s;
+
 	p->multiple_seq_pdr_count  = 0;
 	p->multiple_pdr_detected   = 0;
 	p->last_fault_type         = FT_UNSPECIFIED;
@@ -1868,8 +1885,28 @@ int port_initialize(struct port *p)
 			goto no_timers;
 		}
 	}
-	if (transport_open(p->trp, p->iface, &p->fda, p->timestamping))
-		goto no_tropen;
+
+    if (transport_open(p->trp, p->iface, &p->fda, p->timestamping))
+        goto no_tropen;
+
+    if (is_clock_virtual()){
+        // copy the fd
+        s = read(get_virtual_event_fd(), &u, sizeof(uint64_t));
+        if (s != sizeof(uint64_t))
+            handle_error("read"); // wait for main thread open first
+        //pthread_mutex_lock(&fd_event_create_mutex);
+        //p->fda.fd[FD_EVENT] = get_event_fd();
+        //pthread_mutex_unlock(&fd_event_create_mutex);
+        //p->fda.fd[FD_GENERAL] = -1;
+    } else {
+        //pthread_mutex_lock(&fd_event_create_mutex);
+        //set_event_fd(p->fda.fd[FD_EVENT]);
+        //pthread_mutex_unlock(&fd_event_create_mutex);
+        u = 1;
+        s = write(get_virtual_event_fd(), &u, sizeof(uint64_t));
+        if (s != sizeof(uint64_t))
+            handle_error("write");
+    }
 
 	for (i = 0; i < N_TIMER_FDS; i++) {
 		p->fda.fd[FD_FIRST_TIMER + i] = fd[i];
@@ -2787,6 +2824,8 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 	enum fsm_event event = EV_NONE;
 	struct ptp_message *msg;
 	int cnt, fd = p->fda.fd[fd_index], err;
+    uint64_t u;
+    ssize_t s;
 
 	switch (fd_index) {
 	case FD_ANNOUNCE_TIMER:
@@ -2834,6 +2873,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		port_set_delay_tmo(p);
 		delay_req_prune(p);
 		p->service_stats.delay_timeout++;
+
 		if (port_delay_request(p)) {
 			return EV_FAULT_DETECTED;
 		}
@@ -2896,13 +2936,29 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 
 	msg->hwts.type = p->timestamping;
 
-	cnt = transport_recv(p->trp, fd, msg);
+    // should be for virtual one, if it is the eventfd, then get from the
+    // transfer station
+    pr_debug("NON_TIMER FD in event: %d", fd_index);
+    if (fd_index != FD_VIRTUAL_EVENT) { // normal event
+	    cnt = transport_recv(p->trp, fd, msg);
+    } else { // data transfer
+        s = read(get_virtual_event_fd(), &u, sizeof(uint64_t));
+        if (s != sizeof(uint64_t))
+            handle_error("read");
+
+        pthread_mutex_lock(&fd_event_create_mutex);
+        msg_cp_data_and_ts(&msg_trans_station, msg, msg_trans_station_recv_cnt);
+        pr_debug("recv: Data transfer to different domain");
+        pthread_mutex_unlock(&fd_event_create_mutex);
+        cnt = msg_trans_station_recv_cnt;
+    }
+
 	if (cnt < 0) {
 		pr_err("%s: recv message failed", p->log_name);
 		msg_put(msg);
 		return EV_FAULT_DETECTED;
 	}
-	err = msg_post_recv(msg, cnt);
+	err = msg_post_recv(msg, cnt, port_clock_domain_number(p));
 	if (err) {
 		switch (err) {
 		case -EBADMSG:
@@ -2911,6 +2967,18 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		case -EPROTO:
 			pr_debug("%s: ignoring message", p->log_name);
 			break;
+        case -ENOMSG:
+            // need to trigger event, duplicate data
+            pthread_mutex_lock(&fd_event_create_mutex);
+            msg_duplicate_off_pool(msg, &msg_trans_station, cnt, &msg_trans_station_recv_cnt);
+            pthread_mutex_unlock(&fd_event_create_mutex);
+            // trigger eventfd (only event, not general, we don't support it)
+            u = 1;
+            s = write(get_virtual_event_fd(), &u, sizeof(uint64_t));
+            pr_debug("transmit: Data transfer to different domain");
+            if (s != sizeof(uint64_t))
+                handle_error("write");
+            break;
 		}
 		msg_put(msg);
 		return EV_NONE;
@@ -2982,7 +3050,9 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 int port_forward(struct port *p, struct ptp_message *msg)
 {
 	int cnt;
+    //pthread_mutex_lock(&fd_event_create_mutex);
 	cnt = transport_send(p->trp, &p->fda, TRANS_GENERAL, msg);
+    //pthread_mutex_unlock(&fd_event_create_mutex);
 	if (cnt <= 0) {
 		return -1;
 	}
@@ -3014,7 +3084,9 @@ int port_prepare_and_send(struct port *p, struct ptp_message *msg,
 	if (msg_unicast(msg)) {
 		cnt = transport_sendto(p->trp, &p->fda, event, msg);
 	} else {
+        //pthread_mutex_lock(&fd_event_create_mutex);
 		cnt = transport_send(p->trp, &p->fda, event, msg);
+        //pthread_mutex_unlock(&fd_event_create_mutex);
 	}
 	if (cnt <= 0) {
 		return -1;
@@ -3388,7 +3460,7 @@ struct port *port_open(const char *phc_device,
 	}
 	p->nrate.ratio = 1.0;
 
-	port_clear_fda(p, N_POLLFD);
+	port_clear_fda(p, N_POLLFD); // for virtual event
 	p->fault_fd = -1;
 	if (!port_is_uds(p)) {
 		p->fault_fd = timerfd_create(CLOCK_MONOTONIC, 0);

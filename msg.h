@@ -341,6 +341,15 @@ static inline int msg_type(const struct ptp_message *m)
 }
 
 /**
+ * Obtain the message domainNumber.
+ * @param m  Message to test.
+ * @return   The value of the messageType field.
+ */
+static inline UInteger8 msg_domainNumber(const struct ptp_message *m)
+{
+	return m->header.domainNumber;
+}
+/**
  * Allocate a new message instance.
  *
  * Messages are reference counted, and newly allocated messages have a
@@ -374,7 +383,7 @@ void msg_cleanup(void);
  *             The returned message will be in host byte order, having
  *             been passed to @ref msg_post_recv().
  */
-struct ptp_message *msg_duplicate(struct ptp_message *msg, int cnt);
+struct ptp_message *msg_duplicate(struct ptp_message *msg, int cnt, UInteger8 domainNumber);
 
 void t_msg_pool_init();
 /**
@@ -389,7 +398,7 @@ void msg_get(struct ptp_message *m);
  * @param cnt  The size of 'm' in bytes.
  * @return   Zero on success, non-zero if the message is invalid.
  */
-int msg_post_recv(struct ptp_message *m, int cnt);
+int msg_post_recv(struct ptp_message *m, int cnt, UInteger8 domainNumber);
 
 /**
  * Prepare messages for transmission.
@@ -478,4 +487,7 @@ static inline int64_t net2host64(int64_t val)
 	return __be64_to_cpu(val);
 }
 
+struct ptp_message *msg_cp_data_and_ts(struct ptp_message *src, struct ptp_message *target, int cnt);
+
+struct ptp_message *msg_duplicate_off_pool(struct ptp_message *msg, struct ptp_message *target, int cnt, int *target_cnt);
 #endif

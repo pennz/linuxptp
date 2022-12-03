@@ -336,7 +336,7 @@ static struct ptp_message *nsm_recv(struct nsm *nsm, int fd)
 		pr_err("recv message failed");
 		goto failed;
 	}
-	err = msg_post_recv(msg, cnt);
+	err = msg_post_recv(msg, cnt, -1);
 	if (err) {
 		switch (err) {
 		case -EBADMSG:

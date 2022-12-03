@@ -70,7 +70,7 @@ struct raw {
 #define PRP_MIN_PACKET_LEN 70
 #define PRP_TRAILER_LEN 6
 
-static _Thread_local struct sock_filter raw_filter[N_RAW_FILTER] = {
+static _Thread_local struct sock_filter raw_filter[N_RAW_FILTER] = { // https://www.kernel.org/doc/html/v5.9/networking/filter.html
 	{OP_LDH,  0, 0, OFF_ETYPE   },
 	{OP_JEQ,  0, 4, ETH_P_8021Q          }, /*f goto non-vlan block*/
 	{OP_LDH,  0, 0, OFF_ETYPE + 4        },
@@ -79,7 +79,7 @@ static _Thread_local struct sock_filter raw_filter[N_RAW_FILTER] = {
 	{OP_JUN,  0, 0, 2                    }, /*goto test general bit*/
 	{OP_JEQ,  0, 4, ETH_P_1588  }, /*f goto reject*/
 	{OP_LDB,  0, 0, ETH_HLEN    },
-	{OP_AND,  0, 0, PTP_GEN_BIT }, /*test general bit*/
+	{OP_AND,  0, 0, PTP_GEN_BIT }, /*test general bit*/ // https://www.ieee802.org/1/files/public/docs2008/as-garner-1588v2-summary-0908.pdf, page 20, PTP general messages **(not time stamped)**
 	{OP_JEQ,  0, 1, 0           }, /*0,1=accept event; 1,0=accept general*/
 	{OP_RETK, 0, 0, 1500        }, /*accept*/
 	{OP_RETK, 0, 0, 0           }, /*reject*/
@@ -101,7 +101,7 @@ static int raw_configure(int fd, int event, int index,
 		raw_filter[filter_test].jf = 0;
 	}
 
-	if (setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, &prg, sizeof(prg))) {
+	if (setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, &prg, sizeof(prg))) { // man 7 socket
 		pr_err("setsockopt SO_ATTACH_FILTER failed: %m");
 		return -1;
 	}
@@ -149,8 +149,8 @@ static int raw_configure(int fd, int event, int index,
 
 static int raw_close(struct transport *t, struct fdarray *fda)
 {
-	close(fda->fd[0]);
-	close(fda->fd[1]);
+	close(fda->fd[FD_EVENT]);
+	close(fda->fd[FD_GENERAL]);
 	return 0;
 }
 
@@ -296,26 +296,28 @@ static int raw_open(struct transport *t, struct interface *iface,
 	if (sk_interface_macaddr(name, &raw->src_addr))
 		goto no_mac;
 
+    int virtual_flag = config_get_int(t->cfg, NULL, "virtual");
+
 	socket_priority = config_get_int(t->cfg, "global", "socket_priority");
 
-	efd = open_socket(name, 1, ptp_dst_mac, p2p_dst_mac, socket_priority);
-	if (efd < 0)
-		goto no_event;
+    efd = open_socket(name, 1, ptp_dst_mac, p2p_dst_mac, socket_priority);
+    if (efd < 0)
+        goto no_event;
 
-	gfd = open_socket(name, 0, ptp_dst_mac, p2p_dst_mac, socket_priority);
-	if (gfd < 0)
-		goto no_general;
+    gfd = open_socket(name, 0, ptp_dst_mac, p2p_dst_mac, socket_priority);
+    if (gfd < 0)
+        goto no_general;
 
-	if (sk_timestamping_init(efd, name, ts_type, TRANS_IEEE_802_3,
-				 interface_get_vclock(iface)))
-		goto no_timestamping;
+    if (sk_timestamping_init(efd, name, ts_type, TRANS_IEEE_802_3,
+                 interface_get_vclock(iface)))
+        goto no_timestamping;
 
-	if (sk_general_init(gfd))
-		goto no_timestamping;
+    if (sk_general_init(gfd))
+        goto no_timestamping;
 
-	fda->fd[FD_EVENT] = efd;
-	fda->fd[FD_GENERAL] = gfd;
-	return 0;
+    fda->fd[FD_EVENT] = efd;
+    fda->fd[FD_GENERAL] = gfd;
+    return 0;
 
 no_timestamping:
 	close(gfd);
