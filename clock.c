@@ -939,7 +939,6 @@ struct clock *clock_create(enum clock_type type, struct config *config,
 	struct interface *iface;
 	struct timespec ts;
 	int sfl;
-    int efd;
 
     if (config_get_int(config, NULL, "virtual")){
         set_clock_virtual();
@@ -1253,15 +1252,6 @@ struct clock *clock_create(enum clock_type type, struct config *config,
 	LIST_INIT(&c->ports);
 	c->last_port_number = 0;
 
-    pthread_mutex_lock (&fd_virtual_event_share_mutex);
-    if (fd_virtual_event_share == -1) {
-        efd = eventfd(0, EFD_SEMAPHORE);
-        if (efd == -1) {
-           handle_error("eventfd create failed for virtual event distribution");
-        }
-        fd_virtual_event_share = efd;
-    }
-    pthread_mutex_unlock (&fd_virtual_event_share_mutex); // two thread will use this
 
 	if (clock_resize_pollfd(c, 0)) {
 		pr_err("failed to allocate pollfd");
@@ -1401,16 +1391,16 @@ static void clock_fill_pollfd(struct pollfd *dest, struct port *p, bool with_vir
 
     // we patch our shared event here // use the same memory
     if (with_virtual) {
+        dest[FD_VIRTUAL_EVENT].fd = fd_virtual_event_share;
 
-        dest[i+1].fd = fd_virtual_event_share;
-
+        // set events
         if (is_clock_virtual()) {
-	        dest[i+1].events = POLLIN|POLLPRI;
+	        dest[FD_VIRTUAL_EVENT].events = POLLIN|POLLPRI;
 
             dest[FD_EVENT].events = POLLERR;
             dest[FD_GENERAL].events = POLLERR;
         } else {
-	        dest[i+1].events = POLLERR;
+	        dest[FD_VIRTUAL_EVENT].events = POLLERR;
         }
     }
 }
@@ -1667,7 +1657,7 @@ int clock_poll(struct clock *c)
 
 	clock_check_pollfd(c);
 
-	cnt = poll(c->pollfd, (c->nports + 2) * N_CLOCK_PFD+1, -1);
+	cnt = poll(c->pollfd, (c->nports + 2) * N_CLOCK_PFD, -1);
 
 	if (cnt < 0) {
 		if (EINTR == errno) {
@@ -1684,7 +1674,7 @@ int clock_poll(struct clock *c)
 
 	LIST_FOREACH(p, &c->ports, list) {
 		/* Let the ports handle their events. */
-		for (i = 0; i < (N_POLLFD+1); i++) {
+		for (i = 0; i < (N_POLLFD); i++) {
 			if (cur[i].revents & (POLLIN|POLLPRI|POLLERR)) {
 				if (cur[i].revents & POLLERR) {
 					pr_err("%s: unexpected socket error",
@@ -1719,7 +1709,7 @@ int clock_poll(struct clock *c)
 			}
 		}
 
-		cur += N_CLOCK_PFD+1;
+		cur += N_CLOCK_PFD;
 	}
 
 	/* Check the UDS ports. */
@@ -2152,4 +2142,19 @@ struct servo *clock_servo(struct clock *c)
 enum servo_state clock_servo_state(struct clock *c)
 {
 	return c->servo_state;
+}
+
+void _clock_share_event_fd_init()
+{
+    int efd;
+
+    pthread_mutex_lock (&fd_virtual_event_share_mutex);
+    if (fd_virtual_event_share == -1) {
+        efd = eventfd(0, EFD_SEMAPHORE); // 直接放在最前面，反正都要用
+        if (efd == -1) {
+           handle_error("eventfd create failed for virtual event distribution");
+        }
+        fd_virtual_event_share = efd;
+    } // use eventfd to do synchronization
+    pthread_mutex_unlock (&fd_virtual_event_share_mutex); // two thread will use this
 }

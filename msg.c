@@ -379,51 +379,34 @@ void msg_get(struct ptp_message *m)
 int msg_post_recv(struct ptp_message *m, int cnt, UInteger8 domainNumber)
 {
 	int err, pdulen, suffix_len, type;
-        int another_domain_flag = 0;
 
     //ref: https://elixir.bootlin.com/linux/latest/source/include/uapi/asm-generic/errno.h#L57
 	if (cnt < sizeof(struct ptp_header))
 		return -EBADMSG;
 
-	err = hdr_post_recv(&m->header);
-	if (err)
-		return err;
-    if (domainNumber != -1 && msg_domainNumber(m) != domainNumber)
-        another_domain_flag = 1;
-
 	type = msg_type(m);
 
-    if (another_domain_flag) {
+	if ((domainNumber != -1) && (msg_domainNumber(m) != domainNumber)) {
         switch (type) {
         case SYNC:
-            pdulen = sizeof(struct sync_msg);
             return -ENOMSG; // will copy
         case DELAY_REQ:
-            pdulen = sizeof(struct delay_req_msg);
             break;
         case PDELAY_REQ:
-            pdulen = sizeof(struct pdelay_req_msg);
             break;
         case PDELAY_RESP:
-            pdulen = sizeof(struct pdelay_resp_msg);
             return -ENOMSG; // will copy
         case FOLLOW_UP:
-            pdulen = sizeof(struct follow_up_msg);
             return -ENOMSG; // will copy
         case DELAY_RESP:
-            pdulen = sizeof(struct delay_resp_msg);
             return -ENOMSG; // will copy
         case PDELAY_RESP_FOLLOW_UP:
-            pdulen = sizeof(struct pdelay_resp_fup_msg);
             return -ENOMSG; // will copy
         case ANNOUNCE:
-            pdulen = sizeof(struct announce_msg);
             break;
         case SIGNALING:
-            pdulen = sizeof(struct signaling_msg);
             break;
         case MANAGEMENT:
-            pdulen = sizeof(struct management_msg);
             break;
         default:
             return -EBADMSG;
@@ -431,6 +414,9 @@ int msg_post_recv(struct ptp_message *m, int cnt, UInteger8 domainNumber)
         return -EPROTO; // ignore
     }
 
+	err = hdr_post_recv(&m->header); // this will ntohs
+	if (err)
+		return err;
 	switch (type) {
 	case SYNC:
 		pdulen = sizeof(struct sync_msg);
@@ -510,6 +496,7 @@ int msg_post_recv(struct ptp_message *m, int cnt, UInteger8 domainNumber)
 		return suffix_len;
 	}
 	if (pdulen + suffix_len != m->header.messageLength) {
+        msg_print(m, stderr);
 		return -EBADMSG;
 	}
 
@@ -626,6 +613,7 @@ void msg_print(struct ptp_message *m, FILE *fp)
 {
 	fprintf(fp,
 		"\t"
+		"pointerLoc %p "
 		"%-10s "
 //		"versionPTP         0x%02X "
 		"messageLength      %hu "
@@ -639,6 +627,7 @@ void msg_print(struct ptp_message *m, FILE *fp)
 //		"control            %u "
 //		"logMessageInterval %d "
 		,
+		m,
 		msg_type_string(msg_type(m)),
 //		m->header.ver,
 		m->header.messageLength,

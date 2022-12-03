@@ -395,4 +395,5 @@ void clock_check_ts(struct clock *c, uint64_t ts);
  */
 double clock_rate_ratio(struct clock *c);
 
+void _clock_share_event_fd_init();
 #endif

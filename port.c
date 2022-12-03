@@ -51,8 +51,8 @@
 static struct ptp_message msg_trans_station;
 static int msg_trans_station_recv_cnt;
 
-static struct ptp_message msg_trans_station_1;
-static int msg_trans_station_recv_cnt_1;
+//static struct ptp_message msg_trans_station_1;
+//static int msg_trans_station_recv_cnt_1;
 
 static pthread_mutex_t fd_event_create_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -2938,7 +2938,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 
     // should be for virtual one, if it is the eventfd, then get from the
     // transfer station
-    pr_debug("NON_TIMER FD in event: %d", fd_index);
+    //pr_debug("NON_TIMER FD in event: %d", fd_index);
     if (fd_index != FD_VIRTUAL_EVENT) { // normal event
 	    cnt = transport_recv(p->trp, fd, msg);
     } else { // data transfer
@@ -2948,8 +2948,9 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 
         pthread_mutex_lock(&fd_event_create_mutex);
         msg_cp_data_and_ts(&msg_trans_station, msg, msg_trans_station_recv_cnt);
-        pr_debug("recv: Data transfer to different domain");
         pthread_mutex_unlock(&fd_event_create_mutex);
+        pr_debug("recv: Data transfer to different domain");
+        msg_print(msg, stderr);
         cnt = msg_trans_station_recv_cnt;
     }
 
@@ -2958,6 +2959,8 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		msg_put(msg);
 		return EV_FAULT_DETECTED;
 	}
+    //fprintf(stderr, "before msg_post_recv");
+    //msg_print(msg, stderr);
 	err = msg_post_recv(msg, cnt, port_clock_domain_number(p));
 	if (err) {
 		switch (err) {
@@ -2974,8 +2977,10 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
             pthread_mutex_unlock(&fd_event_create_mutex);
             // trigger eventfd (only event, not general, we don't support it)
             u = 1;
-            s = write(get_virtual_event_fd(), &u, sizeof(uint64_t));
+            // s = write(get_virtual_event_fd(), &u, sizeof(uint64_t));
             pr_debug("transmit: Data transfer to different domain");
+            msg_print(&msg_trans_station, stderr);
+
             if (s != sizeof(uint64_t))
                 handle_error("write");
             break;
