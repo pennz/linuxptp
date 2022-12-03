@@ -490,4 +490,5 @@ static inline int64_t net2host64(int64_t val)
 struct ptp_message *msg_cp_data_and_ts(struct ptp_message *src, struct ptp_message *target, int cnt);
 
 struct ptp_message *msg_duplicate_off_pool(struct ptp_message *msg, struct ptp_message *target, int cnt, int *target_cnt);
+
 #endif

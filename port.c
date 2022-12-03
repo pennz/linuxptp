@@ -48,7 +48,7 @@
 /**
  * Temporary transfer station for message
  */
-static struct ptp_message msg_trans_station;
+static struct ptp_message* p_msg_trans_station;
 static int msg_trans_station_recv_cnt;
 
 //static struct ptp_message msg_trans_station_1;
@@ -535,6 +535,9 @@ static struct follow_up_info_tlv *follow_up_info_extract(struct ptp_message *m)
 
 	TAILQ_FOREACH(extra, &m->tlv_list, list) {
 		f = (struct follow_up_info_tlv *) extra->tlv;
+#ifdef DEBUG
+        pr_debug("[VIRT_EVENT] handle FOLLOW_UP, no follow_up_info_tlv, tlv_list info, %p", f);
+#endif
 		if (f->type == TLV_ORGANIZATION_EXTENSION &&
 		    f->length == sizeof(*f) - sizeof(f->type) - sizeof(f->length) &&
 //		    memcmp(f->id, ieee8021_id, sizeof(ieee8021_id)) &&
@@ -1359,11 +1362,19 @@ static void port_syfufsm_print_mismatch(struct port *p, enum syfu_event event,
 	else
 		expected_msgtype = SYNC;
 
-	pr_debug("%s: have %s %hu, expecting %s but got %s %hu, dropping",
+	pr_debug("%s: have %s %hu, expecting %s but got %s %hu, adress %p, dropping",
 		 p->log_name, msg_type_string(msg_type(p->last_syncfup)),
 		 p->last_syncfup->header.sequenceId,
 		 msg_type_string(expected_msgtype),
-		 msg_type_string(msg_type(m)), m->header.sequenceId);
+		 msg_type_string(msg_type(m)), m->header.sequenceId, m);
+    msg_print(m, stderr);
+	//hdr_post_recv(&m->header); // this will ntohs
+	//pr_debug("%s: have %s %hu, expecting %s but got %s %hu, adress %p, dropping",
+	//	 p->log_name, msg_type_string(msg_type(p->last_syncfup)),
+	//	 p->last_syncfup->header.sequenceId,
+	//	 msg_type_string(expected_msgtype),
+	//	 msg_type_string(msg_type(m)), m->header.sequenceId, m);
+    //msg_print(m, stderr);
 }
 
 /*
@@ -1832,9 +1843,6 @@ int port_initialize(struct port *p)
 	struct config *cfg = clock_config(p->clock);
 	int fd[N_TIMER_FDS], i;
 
-    uint64_t u;
-    ssize_t s;
-
 	p->multiple_seq_pdr_count  = 0;
 	p->multiple_pdr_detected   = 0;
 	p->last_fault_type         = FT_UNSPECIFIED;
@@ -2202,8 +2210,11 @@ void process_follow_up(struct port *p, struct ptp_message *m)
 
 	if (p->follow_up_info) {
 		struct follow_up_info_tlv *fui = follow_up_info_extract(m);
-		if (!fui)
+		if (!fui) {
+            pr_debug("[VIRT_EVENT] handle FOLLOW_UP, port no follow_up_info_tlv");
+            msg_print(m, stderr);
 			return;
+        }
 		clock_follow_up_info(p->clock, fui);
 	}
 
@@ -2929,12 +2940,14 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
         if (s != sizeof(uint64_t))
             handle_error("read");
 
+        msg_put(msg);
         pthread_mutex_lock(&fd_event_create_mutex);
-        msg_cp_data_and_ts(&msg_trans_station, msg, msg_trans_station_recv_cnt);
-        pthread_mutex_unlock(&fd_event_create_mutex);
-        pr_debug("recv: Data transfer to different domain");
-        //msg_print(msg, stderr);
+        msg = p_msg_trans_station;
         cnt = msg_trans_station_recv_cnt;
+        //msg_cp_data_and_ts(&msg_trans_station, msg, msg_trans_station_recv_cnt);
+        pthread_mutex_unlock(&fd_event_create_mutex);
+        pr_debug("[VIRT_EVENT] recv: %s, Data transfer to different domain", msg_type_string(msg_type(msg)));
+        //msg_print(msg, stderr);
     }
 #endif
 	if (cnt < 0) {
@@ -2957,7 +2970,9 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
         case -ENOMSG:
             // need to trigger event, duplicate data
             pthread_mutex_lock(&fd_event_create_mutex);
-            msg_duplicate_off_pool(msg, &msg_trans_station, cnt, &msg_trans_station_recv_cnt);
+            //msg_duplicate_off_pool(msg, &msg_trans_station, cnt, &msg_trans_station_recv_cnt);
+            msg_trans_station_recv_cnt = cnt;
+            p_msg_trans_station = msg;
             pthread_mutex_unlock(&fd_event_create_mutex);
             // trigger eventfd (only event, not general, we don't support it)
             u = 1;
@@ -2970,7 +2985,13 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
             break;
 #endif
 		}
-		msg_put(msg);
+#ifdef VIRT_EVENT
+        if (-ENOMSG != err) {
+#endif
+		    msg_put(msg); // put back to the pool if not copy to another domain
+#ifdef VIRT_EVENT
+        }
+#endif
 		return EV_NONE;
 	}
 	port_stats_inc_rx(p, msg);
@@ -3040,9 +3061,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 int port_forward(struct port *p, struct ptp_message *msg)
 {
 	int cnt;
-    //pthread_mutex_lock(&fd_event_create_mutex);
 	cnt = transport_send(p->trp, &p->fda, TRANS_GENERAL, msg);
-    //pthread_mutex_unlock(&fd_event_create_mutex);
 	if (cnt <= 0) {
 		return -1;
 	}
@@ -3074,9 +3093,7 @@ int port_prepare_and_send(struct port *p, struct ptp_message *msg,
 	if (msg_unicast(msg)) {
 		cnt = transport_sendto(p->trp, &p->fda, event, msg);
 	} else {
-        //pthread_mutex_lock(&fd_event_create_mutex);
 		cnt = transport_send(p->trp, &p->fda, event, msg);
-        //pthread_mutex_unlock(&fd_event_create_mutex);
 	}
 	if (cnt <= 0) {
 		return -1;

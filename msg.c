@@ -98,6 +98,14 @@ static int hdr_post_recv(struct ptp_header *m)
 	m->correction = net2host64(m->correction);
 	m->sourcePortIdentity.portNumber = ntohs(m->sourcePortIdentity.portNumber);
 	m->sequenceId = ntohs(m->sequenceId);
+#ifdef VIRT_EVENT
+#ifdef DEBUG
+    if (msg_domainNumber(m) == 1 && (msg_type(m) == SYNC || msg_type(m) == FOLLOW_UP)) {
+        pr_debug("[VIRT_EVENT] DEBUG HDR: %p", m);
+        msg_print(m, stderr);
+    }
+#endif
+#endif
 	return 0;
 }
 
@@ -310,7 +318,10 @@ void msg_cleanup(void)
 
 struct ptp_message *msg_duplicate_off_pool(struct ptp_message *msg, struct ptp_message *target, int cnt, int *target_cnt)
 {
-	memcpy(target, msg, sizeof(*target));
+	msg_tlv_recycle(target);
+	memcpy(target, msg, sizeof(*target)); // source Q list info can be ignored
+    // TODO: copy tlv_list, append one by one...
+
     *target_cnt = cnt;
 
     return target;
@@ -321,16 +332,16 @@ struct ptp_message *msg_cp_data_and_ts(struct ptp_message *src, struct ptp_messa
     // backup other data
 	TAILQ_ENTRY(ptp_message) list;
 
-    memcpy(&list, &(src->list), sizeof(list));
+    memcpy(&list, &(src->list), sizeof(list)); // backup the source Q list info
 	int tail_room = target->tail_room;
 	int refcnt =  target->refcnt;
 
 
-	memcpy(target, src, sizeof(*target));
+	memcpy(target, src, sizeof(*target)); // for tlv, it also need to handle
 
 	target->tail_room = tail_room;
 	target->refcnt = refcnt;
-	memcpy(&(target->list), &list, sizeof(list));
+	memcpy(&(target->list), &list, sizeof(list)); // restore Q list info
 
     return target;
 }
