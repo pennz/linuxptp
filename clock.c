@@ -1389,6 +1389,7 @@ static void clock_fill_pollfd(struct pollfd *dest, struct port *p, bool with_vir
 	dest[i].fd = port_fault_fd(p);
 	dest[i].events = POLLIN|POLLPRI;
 
+#ifdef VIRT_EVENT
     // we patch our shared event here // use the same memory
     if (with_virtual) {
         dest[FD_VIRTUAL_EVENT].fd = fd_virtual_event_share;
@@ -1403,6 +1404,7 @@ static void clock_fill_pollfd(struct pollfd *dest, struct port *p, bool with_vir
 	        dest[FD_VIRTUAL_EVENT].events = POLLERR;
         }
     }
+#endif
 }
 
 static void clock_check_pollfd(struct clock *c)

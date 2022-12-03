@@ -17,7 +17,7 @@
 
 KBUILD_OUTPUT =
 
-DEBUG	= -DDEBUG -g
+DEBUG	= -DVIRT_EVENT -DDEBUG -g
 CC	= $(CROSS_COMPILE)gcc
 VER     = -DVER=$(version)
 EXTRA_CFLAGS = -std=c11

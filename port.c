@@ -1885,28 +1885,8 @@ int port_initialize(struct port *p)
 			goto no_timers;
 		}
 	}
-
-    if (transport_open(p->trp, p->iface, &p->fda, p->timestamping))
-        goto no_tropen;
-
-    if (is_clock_virtual()){
-        // copy the fd
-        s = read(get_virtual_event_fd(), &u, sizeof(uint64_t));
-        if (s != sizeof(uint64_t))
-            handle_error("read"); // wait for main thread open first
-        //pthread_mutex_lock(&fd_event_create_mutex);
-        //p->fda.fd[FD_EVENT] = get_event_fd();
-        //pthread_mutex_unlock(&fd_event_create_mutex);
-        //p->fda.fd[FD_GENERAL] = -1;
-    } else {
-        //pthread_mutex_lock(&fd_event_create_mutex);
-        //set_event_fd(p->fda.fd[FD_EVENT]);
-        //pthread_mutex_unlock(&fd_event_create_mutex);
-        u = 1;
-        s = write(get_virtual_event_fd(), &u, sizeof(uint64_t));
-        if (s != sizeof(uint64_t))
-            handle_error("write");
-    }
+	if (transport_open(p->trp, p->iface, &p->fda, p->timestamping))
+		goto no_tropen;
 
 	for (i = 0; i < N_TIMER_FDS; i++) {
 		p->fda.fd[FD_FIRST_TIMER + i] = fd[i];
@@ -2939,8 +2919,11 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
     // should be for virtual one, if it is the eventfd, then get from the
     // transfer station
     //pr_debug("NON_TIMER FD in event: %d", fd_index);
+#ifdef VIRT_EVENT
     if (fd_index != FD_VIRTUAL_EVENT) { // normal event
+#endif
 	    cnt = transport_recv(p->trp, fd, msg);
+#ifdef VIRT_EVENT
     } else { // data transfer
         s = read(get_virtual_event_fd(), &u, sizeof(uint64_t));
         if (s != sizeof(uint64_t))
@@ -2950,10 +2933,10 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
         msg_cp_data_and_ts(&msg_trans_station, msg, msg_trans_station_recv_cnt);
         pthread_mutex_unlock(&fd_event_create_mutex);
         pr_debug("recv: Data transfer to different domain");
-        msg_print(msg, stderr);
+        //msg_print(msg, stderr);
         cnt = msg_trans_station_recv_cnt;
     }
-
+#endif
 	if (cnt < 0) {
 		pr_err("%s: recv message failed", p->log_name);
 		msg_put(msg);
@@ -2970,6 +2953,7 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		case -EPROTO:
 			pr_debug("%s: ignoring message", p->log_name);
 			break;
+#ifdef VIRT_EVENT
         case -ENOMSG:
             // need to trigger event, duplicate data
             pthread_mutex_lock(&fd_event_create_mutex);
@@ -2977,13 +2961,14 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
             pthread_mutex_unlock(&fd_event_create_mutex);
             // trigger eventfd (only event, not general, we don't support it)
             u = 1;
-            // s = write(get_virtual_event_fd(), &u, sizeof(uint64_t));
-            pr_debug("transmit: Data transfer to different domain");
-            msg_print(&msg_trans_station, stderr);
+            s = write(get_virtual_event_fd(), &u, sizeof(uint64_t));
+            pr_debug("[VIRT_EVENT] transmit: transfer to different domain");
+            //msg_print(&msg_trans_station, stderr);
 
             if (s != sizeof(uint64_t))
                 handle_error("write");
             break;
+#endif
 		}
 		msg_put(msg);
 		return EV_NONE;

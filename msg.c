@@ -386,7 +386,9 @@ int msg_post_recv(struct ptp_message *m, int cnt, UInteger8 domainNumber)
 
 	type = msg_type(m);
 
+#ifdef VIRT_EVENT
 	if ((domainNumber != -1) && (msg_domainNumber(m) != domainNumber)) {
+        //pr_debug("[VIRT_EVENT] different domain");
         switch (type) {
         case SYNC:
             return -ENOMSG; // will copy
@@ -413,7 +415,7 @@ int msg_post_recv(struct ptp_message *m, int cnt, UInteger8 domainNumber)
         }
         return -EPROTO; // ignore
     }
-
+#endif
 	err = hdr_post_recv(&m->header); // this will ntohs
 	if (err)
 		return err;
@@ -496,7 +498,7 @@ int msg_post_recv(struct ptp_message *m, int cnt, UInteger8 domainNumber)
 		return suffix_len;
 	}
 	if (pdulen + suffix_len != m->header.messageLength) {
-        msg_print(m, stderr);
+        //msg_print(m, stderr);
 		return -EBADMSG;
 	}
 

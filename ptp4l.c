@@ -320,22 +320,23 @@ int main(int argc, char *argv[]) {
 
     _clock_share_event_fd_init();
 
-    inner_main(&ti);
-    //rc = thrd_create(&test_thread, (thrd_start_t) inner_main, (void *)&ti);
-    //if (rc == thrd_error) {
-    //    printf("ERORR; thrd_create() call failed\n");
-    //    exit(EXIT_FAILURE);
-    //}
+    //inner_main(&ti);
+    //return 0;
+    rc = thrd_create(&test_thread, (thrd_start_t) inner_main, (void *)&ti);
+    if (rc == thrd_error) {
+        printf("ERORR; thrd_create() call failed\n");
+        exit(EXIT_FAILURE);
+    }
 
-    //rc = thrd_create(&test_thread2, (thrd_start_t) inner_main, (void *)&ti2);
-    //if (rc == thrd_error) {
-    //    printf("ERORR; thrd_create() call failed\n");
-    //    exit(EXIT_FAILURE);
-    //}
+    rc = thrd_create(&test_thread2, (thrd_start_t) inner_main, (void *)&ti2);
+    if (rc == thrd_error) {
+        printf("ERORR; thrd_create() call failed\n");
+        exit(EXIT_FAILURE);
+    }
 
     int retval2, retval;
-    //thrd_join(test_thread,  &retval);
-    //thrd_join(test_thread2, &retval2);
+    thrd_join(test_thread,  &retval);
+    thrd_join(test_thread2, &retval2);
 
     return retval | retval2;
 }
