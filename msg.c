@@ -98,12 +98,14 @@ static int hdr_post_recv(struct ptp_header *m)
 	m->correction = net2host64(m->correction);
 	m->sourcePortIdentity.portNumber = ntohs(m->sourcePortIdentity.portNumber);
 	m->sequenceId = ntohs(m->sequenceId);
+#if 0
 #ifdef VIRT_EVENT
 #ifdef DEBUG
     if (msg_domainNumber(m) == 1 && (msg_type(m) == SYNC || msg_type(m) == FOLLOW_UP)) {
         pr_debug("[VIRT_EVENT] DEBUG HDR: %p", m);
         msg_print(m, stderr);
     }
+#endif
 #endif
 #endif
 	return 0;
@@ -509,7 +511,6 @@ int msg_post_recv(struct ptp_message *m, int cnt, UInteger8 domainNumber)
 		return suffix_len;
 	}
 	if (pdulen + suffix_len != m->header.messageLength) {
-        //msg_print(m, stderr);
 		return -EBADMSG;
 	}
 

@@ -146,7 +146,7 @@ _Thread_local struct clock the_clock;
 _Thread_local int virtual_flag; // virtual_flag 0 means is the virtual
 
 int fd_virtual_event_share = -1;
-int fd_event_share = -1; // used for sendout data
+int fd_event_share_flag = 1; // used for sendout data
 
 static pthread_mutex_t fd_virtual_event_share_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -166,12 +166,12 @@ inline int get_virtual_event_fd() {
     return fd_virtual_event_share;
 }
 
-inline int get_event_fd() {
-    return fd_event_share;
+inline int get_share_event_fd_flag() {
+    return fd_event_share_flag;
 }
 
-inline void set_event_fd(int fd) {
-    fd_event_share = fd;
+inline void set_share_event_fd_flag(int fd) {
+    fd_event_share_flag = fd;
 }
 
 static void handle_state_decision_event(struct clock *c);
@@ -1398,11 +1398,13 @@ static void clock_fill_pollfd(struct pollfd *dest, struct port *p, bool with_vir
         if (is_clock_virtual()) {
 	        dest[FD_VIRTUAL_EVENT].events = POLLIN|POLLPRI;
 
-            dest[FD_EVENT].events = POLLERR;
-            dest[FD_GENERAL].events = POLLERR;
+            dest[FD_EVENT].events = 0;
+            dest[FD_GENERAL].events = 0;
         } else {
-	        dest[FD_VIRTUAL_EVENT].events = POLLERR;
+	        dest[FD_VIRTUAL_EVENT].events = 0; // only one way send
         }
+    } else {
+        dest[FD_VIRTUAL_EVENT].fd = -1; // ignore this fd
     }
 #endif
 }
@@ -1679,8 +1681,8 @@ int clock_poll(struct clock *c)
 		for (i = 0; i < (N_POLLFD); i++) {
 			if (cur[i].revents & (POLLIN|POLLPRI|POLLERR)) {
 				if (cur[i].revents & POLLERR) {
-					pr_err("%s: unexpected socket error",
-					       port_log_name(p));
+					pr_err("%s: unexpected socket error for #%d fd",
+					       port_log_name(p), i);
 					event = EV_FAULT_DETECTED;
 				} else {
 					event = port_event(p, i);
@@ -1695,6 +1697,10 @@ int clock_poll(struct clock *c)
 				/* Clear any fault after a little while. */
 				if (PS_FAULTY == port_state(p)) {
 					clock_fault_timeout(p, 1);
+#ifdef VIRT_EVENT
+                    set_share_event_fd_flag(0);
+                    c->pollfd[FD_VIRTUAL_EVENT].fd = -1;
+#endif
 					break;
 				}
 			}
@@ -1707,6 +1713,10 @@ int clock_poll(struct clock *c)
 		if (cur[N_POLLFD].revents & (POLLIN|POLLPRI)) {
 			clock_fault_timeout(p, 0);
 			if (port_link_status_get(p)) {
+#ifdef VIRT_EVENT
+                set_share_event_fd_flag(1);
+                c->pollfd[FD_VIRTUAL_EVENT].fd = fd_virtual_event_share;
+#endif
 				port_dispatch(p, EV_FAULT_CLEARED, 0);
 			}
 		}

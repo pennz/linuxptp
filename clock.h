@@ -47,8 +47,8 @@ bool is_clock_virtual();
 void set_clock_virtual();
 void clear_clock_virtual();
 int get_virtual_event_fd();
-int get_event_fd();
-void set_event_fd();
+int get_share_event_fd_flag();
+void set_share_event_fd_flag();
 
 /**
  * Obtains a reference to the best foreign master of a clock.
