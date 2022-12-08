@@ -55,16 +55,21 @@ static struct msg_pool
           struct ptp_message **tqh_last; }
             msg_pool =
                     { ((void *)0), &(msg_pool).tqh_first };*/
-
-static _Thread_local struct {
+struct pool_stat_type {
 	int total;
 	int count;
-} pool_stats;
+};
+
+static _Thread_local struct pool_stat_type pool_stats;
 
 #ifdef DEBUG_POOL
 static void pool_debug(const char *str, void *addr)
 {
+#ifdef DEBUG
+	pr_debug("*** %p %10s total %d count %d used %d\n",
+#else
 	fprintf(stderr, "*** %p %10s total %d count %d used %d\n",
+#endif
 		addr, str, pool_stats.total, pool_stats.count,
 		pool_stats.total - pool_stats.count);
 }

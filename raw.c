@@ -62,22 +62,21 @@ struct raw {
 #define OP_LDH  (BPF_LD  | BPF_H   | BPF_ABS)
 #define OP_RETK (BPF_RET | BPF_K)
 
+#define DOMAIN_NUMBER_OFFSET 4
+#define PTP_DOMAIN_NUMBER_BIT 0x01 /* indicates  */
 #define PTP_GEN_BIT 0x08 /* indicates general message, if set in message type */
 
-#define N_RAW_FILTER    12
-#define RAW_FILTER_TEST 9
+#define N_RAW_FILTER    8
+#define RAW_FILTER_TEST 5
+#define RAW_FILTER_DOMAIN_TEST 2
 
 #define PRP_MIN_PACKET_LEN 70
 #define PRP_TRAILER_LEN 6
 
 static _Thread_local struct sock_filter raw_filter[N_RAW_FILTER] = { // https://www.kernel.org/doc/html/v5.9/networking/filter.html
-	{OP_LDH,  0, 0, OFF_ETYPE   },
-	{OP_JEQ,  0, 4, ETH_P_8021Q          }, /*f goto non-vlan block*/
-	{OP_LDH,  0, 0, OFF_ETYPE + 4        },
-	{OP_JEQ,  0, 7, ETH_P_1588           }, /*f goto reject*/
-	{OP_LDB,  0, 0, ETH_HLEN + VLAN_HLEN },
-	{OP_JUN,  0, 0, 2                    }, /*goto test general bit*/
-	{OP_JEQ,  0, 4, ETH_P_1588  }, /*f goto reject*/
+	{OP_LDB,  0, 0, ETH_HLEN + DOMAIN_NUMBER_OFFSET },
+	{OP_AND,  0, 0, PTP_DOMAIN_NUMBER_BIT },
+	{OP_JEQ,  0, 4, 1           }, /* equal to 1, domain 1, will accept */
 	{OP_LDB,  0, 0, ETH_HLEN    },
 	{OP_AND,  0, 0, PTP_GEN_BIT }, /*test general bit*/ // https://www.ieee802.org/1/files/public/docs2008/as-garner-1588v2-summary-0908.pdf, page 20, PTP general messages **(not time stamped)**
 	{OP_JEQ,  0, 1, 0           }, /*0,1=accept event; 1,0=accept general*/
@@ -86,7 +85,7 @@ static _Thread_local struct sock_filter raw_filter[N_RAW_FILTER] = { // https://
 };
 
 static int raw_configure(int fd, int event, int index,
-			 unsigned char *addr1, unsigned char *addr2, int enable)
+			 unsigned char *addr1, unsigned char *addr2, int enable, int virtual_flag)
 {
 	int err1, err2, filter_test, option;
 	struct packet_mreq mreq;
@@ -100,6 +99,15 @@ static int raw_configure(int fd, int event, int index,
 		raw_filter[filter_test].jt = 1;
 		raw_filter[filter_test].jf = 0;
 	}
+
+	filter_test = RAW_FILTER_DOMAIN_TEST;
+    if (virtual_flag) {
+		raw_filter[filter_test].jt = 0;
+		raw_filter[filter_test].jf = 4;
+    } else {
+		raw_filter[filter_test].jt = 4;
+		raw_filter[filter_test].jf = 0;
+    }
 
 	if (setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, &prg, sizeof(prg))) { // man 7 socket
 		pr_err("setsockopt SO_ATTACH_FILTER failed: %m");
@@ -155,12 +163,12 @@ static int raw_close(struct transport *t, struct fdarray *fda)
 }
 
 static int open_socket(const char *name, int event, unsigned char *ptp_dst_mac,
-		       unsigned char *p2p_dst_mac, int socket_priority)
+		       unsigned char *p2p_dst_mac, int socket_priority, int virt_flag)
 {
 	struct sockaddr_ll addr;
 	int fd, index;
 
-	fd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+	fd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_1588));
 	if (fd < 0) {
 		pr_err("socket failed: %m");
 		goto no_socket;
@@ -172,7 +180,7 @@ static int open_socket(const char *name, int event, unsigned char *ptp_dst_mac,
 	memset(&addr, 0, sizeof(addr));
 	addr.sll_ifindex = index;
 	addr.sll_family = AF_PACKET;
-	addr.sll_protocol = htons(ETH_P_ALL);
+	addr.sll_protocol = htons(ETH_P_1588);
 	if (bind(fd, (struct sockaddr *) &addr, sizeof(addr))) {
 		pr_err("bind failed: %m");
 		goto no_option;
@@ -188,7 +196,7 @@ static int open_socket(const char *name, int event, unsigned char *ptp_dst_mac,
 		pr_err("setsockopt SO_PRIORITY failed: %m");
 		goto no_option;
 	}
-	if (raw_configure(fd, event, index, ptp_dst_mac, p2p_dst_mac, 1))
+    if (raw_configure(fd, event, index, ptp_dst_mac, p2p_dst_mac, 1, virt_flag))
 		goto no_option;
 
 	return fd;
@@ -278,6 +286,7 @@ static int raw_open(struct transport *t, struct interface *iface,
 	int efd, gfd, socket_priority;
 	const char *name;
 	char *str;
+    int virt_flag = config_get_int(t->cfg, NULL, "virtual");
 
 	name = interface_label(iface);
 	str = config_get_string(t->cfg, name, "ptp_dst_mac");
@@ -296,15 +305,13 @@ static int raw_open(struct transport *t, struct interface *iface,
 	if (sk_interface_macaddr(name, &raw->src_addr))
 		goto no_mac;
 
-    int virtual_flag = config_get_int(t->cfg, NULL, "virtual");
-
 	socket_priority = config_get_int(t->cfg, "global", "socket_priority");
 
-    efd = open_socket(name, 1, ptp_dst_mac, p2p_dst_mac, socket_priority);
+    efd = open_socket(name, 1, ptp_dst_mac, p2p_dst_mac, socket_priority, virt_flag);
     if (efd < 0)
         goto no_event;
 
-    gfd = open_socket(name, 0, ptp_dst_mac, p2p_dst_mac, socket_priority);
+    gfd = open_socket(name, 0, ptp_dst_mac, p2p_dst_mac, socket_priority, virt_flag);
     if (gfd < 0)
         goto no_general;
 

@@ -223,6 +223,9 @@ int tsproc_update_offset(struct tsproc *tsp, tmv_t *offset, double *weight)
 	} else {
 		*weight = 1.0;
 	}
+#ifdef VIRT_EVENT
+    pr_debug("offset info: offset %10ld, weight %f", tmv_to_nanoseconds(*offset),*weight);
+#endif
 
 	return 0;
 }

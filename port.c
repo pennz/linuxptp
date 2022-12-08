@@ -48,8 +48,13 @@
 /**
  * Temporary transfer station for message
  */
+#ifdef VIRT_EVENT
 static struct ptp_message* p_msg_trans_station;
+static struct ptp_message *msg_payback = NULL;
+#endif
+
 static int msg_trans_station_recv_cnt;
+static unsigned long long trans_cnt = 0;
 
 //static struct ptp_message msg_trans_station_1;
 //static int msg_trans_station_recv_cnt_1;
@@ -1319,6 +1324,7 @@ static void port_synchronize(struct port *p,
 
 	last_state = clock_servo_state(p->clock);
 	state = clock_synchronize(p->clock, t2, t1c);
+
 	switch (state) {
 	case SERVO_UNLOCKED:
 		port_dispatch(p, EV_SYNCHRONIZATION_FAULT, 0);
@@ -1730,7 +1736,14 @@ int port_tx_sync(struct port *p, struct address *dst, uint16_t sequence_id)
 	fup->header.control            = CTL_FOLLOW_UP;
 	fup->header.logMessageInterval = p->logSyncInterval;
 
+#ifdef LOGIC_DEBUG
+struct Timestamp ts_mod;
+ts_mod = tmv_to_Timestamp(msg->hwts.ts);
+ts_mod.seconds_lsb += 100;
+	fup->follow_up.preciseOriginTimestamp = ts_mod;
+#else
 	fup->follow_up.preciseOriginTimestamp = tmv_to_Timestamp(msg->hwts.ts);
+#endif
 
 	if (dst) {
 		fup->address = *dst;
@@ -2818,6 +2831,9 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 	int cnt, fd = p->fda.fd[fd_index], err;
     uint64_t u;
     ssize_t s;
+#ifdef VIRT_EVENT
+    static struct ptp_message* last_p_msg_trans_station;
+#endif
 
 	switch (fd_index) {
 	case FD_ANNOUNCE_TIMER:
@@ -2922,35 +2938,39 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 			return EV_NONE;
 	}
 
-	msg = msg_allocate();
-	if (!msg)
-		return EV_FAULT_DETECTED;
-
-	msg->hwts.type = p->timestamping;
-
     // should be for virtual one, if it is the eventfd, then get from the
     // transfer station
     //pr_debug("NON_TIMER FD in event: %d", fd_index);
 #ifdef VIRT_EVENT
     if (fd_index != FD_VIRTUAL_EVENT) { // normal event
 #endif
+	msg = msg_allocate();
+	if (!msg)
+		return EV_FAULT_DETECTED;
+
+	msg->hwts.type = p->timestamping;
+
 	    cnt = transport_recv(p->trp, fd, msg);
 #ifdef VIRT_EVENT
-    } else { // data transfer
+    } else { // data transfer, it is virual event, the message is from main thread
         s = read(get_virtual_event_fd(), &u, sizeof(uint64_t));
+        trans_cnt++;
         if (s != sizeof(uint64_t))
             handle_error("read");
 
-        msg_put(msg);
+        // pay back
+
         pthread_mutex_lock(&fd_event_create_mutex);
+        if (p_msg_trans_station != last_p_msg_trans_station) {
+            msg_payback = msg_allocate(); // from the lender
+        }
+        last_p_msg_trans_station = p_msg_trans_station;
         msg = p_msg_trans_station;
-        cnt = msg_trans_station_recv_cnt;
-        //msg_cp_data_and_ts(&msg_trans_station, msg, msg_trans_station_recv_cnt);
+        cnt = msg_trans_station_recv_cnt; // will need to pay back
         pthread_mutex_unlock(&fd_event_create_mutex);
 #ifdef DEBUG
         pr_debug("[VIRT_EVENT] recv: %s, Data transfer to different domain", msg_type_string(msg_type(msg)));
 #endif
-        //msg_print(msg, stderr);
     }
 #endif
 	if (cnt < 0) {
@@ -2958,8 +2978,6 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
 		msg_put(msg);
 		return EV_FAULT_DETECTED;
 	}
-    //fprintf(stderr, "before msg_post_recv");
-    //msg_print(msg, stderr);
 	err = msg_post_recv(msg, cnt, port_clock_domain_number(p));
 	if (err) {
 		switch (err) {
@@ -2975,8 +2993,12 @@ static enum fsm_event bc_event(struct port *p, int fd_index)
             if (!get_share_event_fd_flag()) {
                 break;
             }
+        if (msg_payback != NULL && trans_cnt > 0) {
+            msg_put(msg_payback);
+            trans_cnt--;
+            msg_payback = NULL;
+        }
             pthread_mutex_lock(&fd_event_create_mutex);
-            //msg_duplicate_off_pool(msg, &msg_trans_station, cnt, &msg_trans_station_recv_cnt);
             msg_trans_station_recv_cnt = cnt;
             p_msg_trans_station = msg;
             pthread_mutex_unlock(&fd_event_create_mutex);

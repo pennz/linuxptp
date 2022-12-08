@@ -661,6 +661,9 @@ static enum servo_state clock_no_adjust(struct clock *c, tmv_t ingress,
 	if (f->count < f->max_count) {
 		return state;
 	}
+#ifdef LOGIC_DEBUG
+    pr_debug("in clock_synchronize, after f count");
+#endif
 	if (tmv_cmp(ingress, f->ingress1) == 0) {
 		pr_warning("bad timestamps in rate ratio calculation");
 		return state;
@@ -681,6 +684,9 @@ static enum servo_state clock_no_adjust(struct clock *c, tmv_t ingress,
 
 	fui = 1.0 + (c->status.cumulativeScaledRateOffset + 0.0) / POW2_41;
 
+#ifdef LOGIC_DEBUG
+    pr_debug("in clock_synchronize, print info");
+#endif
 	pr_debug("peer/local    %.9f", c->nrr);
 	pr_debug("fup_info      %.9f", fui);
 	pr_debug("product       %.9f", fui * c->nrr);
